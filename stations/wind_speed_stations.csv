@@ -1,0 +1,314 @@
+station_id,name,location,state
+8734383,"Fort Morgan, AL",Fort Morgan,AL
+8734536,"E Range Front Light Visibility, AL",E Range Front Light Visibility,AL
+8735180,"Dauphin Island, AL",Dauphin Island,AL
+8736163,"Middle Bay Port Visibility, Mobile Bay, AL","Middle Bay Port Visibility, Mobile Bay",AL
+8736897,"Coast Guard Sector Mobile, AL",Coast Guard Sector Mobile,AL
+8737005,"Pinto Island Visibility, AL",Pinto Island Visibility,AL
+8737048,"Mobile State Docks, AL",Mobile State Docks,AL
+9450460,"Ketchikan, AK",Ketchikan,AK
+9451054,"Port Alexander, AK",Port Alexander,AK
+9451600,"Sitka, AK",Sitka,AK
+9452210,"Juneau, AK",Juneau,AK
+9452400,"Skagway, Taiya Inlet, AK","Skagway, Taiya Inlet",AK
+9452634,"Elfin Cove, AK",Elfin Cove,AK
+9453220,"Yakutat, Yakutat Bay, AK","Yakutat, Yakutat Bay",AK
+9454050,"Cordova, AK",Cordova,AK
+9454240,"Valdez, AK",Valdez,AK
+9455090,"Seward, AK",Seward,AK
+9455500,"Seldovia, AK",Seldovia,AK
+9455760,"Nikiski, AK",Nikiski,AK
+9455920,"Anchorage, AK",Anchorage,AK
+9457804,"Alitak, AK",Alitak,AK
+9459450,"Sand Point, AK",Sand Point,AK
+9459881,"King Cove, AK",King Cove,AK
+9461380,"Adak Island, AK",Adak Island,AK
+9461710,"Atka, AK",Atka,AK
+9462450,"Nikolski, AK",Nikolski,AK
+9462620,"Unalaska, AK",Unalaska,AK
+9463502,"Port Moller, AK",Port Moller,AK
+9464212,"Village Cove, St Paul Island, AK","Village Cove, St Paul Island",AK
+9468333,"Unalakleet, AK",Unalakleet,AK
+9468756,"Nome, Norton Sound, AK","Nome, Norton Sound",AK
+9491094,"Red Dog Dock, AK",Red Dog Dock,AK
+9497645,"Prudhoe Bay, AK",Prudhoe Bay,AK
+2695535,"Bermuda Biological Station, Bermuda",Bermuda Biological Station,Bermuda
+2695540,"Bermuda, St. Georges Island, Bermuda","Bermuda, St. Georges Island",Bermuda
+9410170,"San Diego, CA",San Diego,CA
+9410230,"La Jolla, CA",La Jolla,CA
+9410647,"Angels Gate, CA",Angels Gate,CA
+9410660,"Los Angeles, CA",Los Angeles,CA
+9410665,"Long Beach Pier J, CA",Long Beach Pier J,CA
+9410666,"Los Angeles Pier 400, CA",Los Angeles Pier 400,CA
+9410670,"Long Beach Pier F, CA",Long Beach Pier F,CA
+9410690,"Los Angeles Berth 161, CA",Los Angeles Berth 161,CA
+9410691,"Los Angeles Badger Avenue Bridge, CA",Los Angeles Badger Avenue Bridge,CA
+9410692,"Long Beach Pier S, CA",Long Beach Pier S,CA
+9410840,"Santa Monica, CA",Santa Monica,CA
+9411340,"Santa Barbara, CA",Santa Barbara,CA
+9412110,"Port San Luis, CA",Port San Luis,CA
+9413450,"Monterey, CA",Monterey,CA
+9414290,"San Francisco, CA",San Francisco,CA
+9414296,"Pier 17 Visibility, San Francisco Bay, CA","Pier 17 Visibility, San Francisco Bay",CA
+9414311,"San Francisco Pier 1, CA",San Francisco Pier 1,CA
+9414523,"Redwood City, CA",Redwood City,CA
+9414750,"Alameda, CA",Alameda,CA
+9414763,"Oakland Berth 67, CA",Oakland Berth 67,CA
+9414769,"Oakland Middle Harbor, CA",Oakland Middle Harbor,CA
+9414776,"Oakland Berth 34, CA",Oakland Berth 34,CA
+9414797,"Oakland Berth 38 Visibility, CA",Oakland Berth 38 Visibility,CA
+9414847,"Point Potrero Richmond, CA",Point Potrero Richmond,CA
+9414863,"Richmond, CA",Richmond,CA
+9415020,"Point Reyes, CA",Point Reyes,CA
+9415102,"Martinez-Amorco Pier, CA",Martinez-Amorco Pier,CA
+9415115,"Pittsburg, Suisun Bay, CA","Pittsburg, Suisun Bay",CA
+9415118,"Union Pacific Rail Road Bridge, CA",Union Pacific Rail Road Bridge,CA
+9415141,"Davis Point, CA",Davis Point,CA
+9415144,"Port Chicago, CA",Port Chicago,CA
+9416841,"Arena Cove, CA",Arena Cove,CA
+9418767,"North Spit, CA",North Spit,CA
+9418768,"North Jetty Landing, Humboldt Bay, CA","North Jetty Landing, Humboldt Bay",CA
+9419750,"Crescent City, CA",Crescent City,CA
+9751364,"Christiansted Harbor, St Croix, VI","Christiansted Harbor, St Croix",VI
+9751381,"Lameshur Bay, St John, VI","Lameshur Bay, St John",VI
+9751401,"Limetree Bay, VI",Limetree Bay,VI
+9751639,"Charlotte Amalie, VI",Charlotte Amalie,VI
+9752235,"Culebra, PR",Culebra,PR
+9752695,"Esperanza, Vieques Island, PR","Esperanza, Vieques Island",PR
+9755371,"San Juan, La Puntilla, San Juan Bay, PR","San Juan, La Puntilla, San Juan Bay",PR
+9759110,"Magueyes Island, PR",Magueyes Island,PR
+9759394,"Mayaguez, PR",Mayaguez,PR
+9759938,"Mona Island, PR",Mona Island,PR
+8461490,"New London, CT",New London,CT
+8465705,"New Haven, CT",New Haven,CT
+8467150,"Bridgeport, CT",Bridgeport,CT
+8551762,"Delaware City, DE",Delaware City,DE
+8551910,"Reedy Point, DE",Reedy Point,DE
+8555889,"Brandywine Shoal Light, DE",Brandywine Shoal Light,DE
+8557380,"Lewes, DE",Lewes,DE
+8590165,"Joint Base Anacostia Bolling, DCA, DC","Joint Base Anacostia Bolling, DCA",DC
+8594900,"Washington, DC",Washington,DC
+8720030,"Fernandina Beach, FL",Fernandina Beach,FL
+8720215,"Navy Fuel Depot, FL",Navy Fuel Depot,FL
+8720218,"Mayport (Bar Pilots Dock), FL",Mayport (Bar Pilots Dock),FL
+8720219,"Dames Point, FL",Dames Point,FL
+8720228,"Little Jetties Visibility, FL",Little Jetties Visibility,FL
+8720233,"Blount Island Command, FL",Blount Island Command,FL
+8720245,"Jacksonville University, FL",Jacksonville University,FL
+8720357,"I-295 Buckman Bridge, FL",I-295 Buckman Bridge,FL
+8721604,"Trident Pier, Port Canaveral, FL","Trident Pier, Port Canaveral",FL
+8722670,"Lake Worth Pier, Atlantic Ocean, FL","Lake Worth Pier, Atlantic Ocean",FL
+8722956,"South Port Everglades, FL",South Port Everglades,FL
+8723214,"Virginia Key, FL",Virginia Key,FL
+8723970,"Vaca Key, Florida Bay, FL","Vaca Key, Florida Bay",FL
+8724580,"Key West, FL",Key West,FL
+8725520,"Fort Myers, FL",Fort Myers,FL
+8726384,"Port Manatee, FL",Port Manatee,FL
+8726412,"Middle Tampa Bay, FL",Middle Tampa Bay,FL
+8726504,"Cut D Channel, Inbound Rear Range, FL","Cut D Channel, Inbound Rear Range",FL
+8726520,"St. Petersburg, FL",St. Petersburg,FL
+8726607,"Old Port Tampa, FL",Old Port Tampa,FL
+8726671,"Sparkman Channel Entrance, FL",Sparkman Channel Entrance,FL
+8726674,"East Bay, FL",East Bay,FL
+8726679,"East Bay Causeway, FL",East Bay Causeway,FL
+8726694,"TPA Cruise Terminal 2, FL",TPA Cruise Terminal 2,FL
+8726724,"Clearwater Beach, FL",Clearwater Beach,FL
+8727520,"Cedar Key, FL",Cedar Key,FL
+8728690,"Apalachicola, FL",Apalachicola,FL
+8729108,"Panama City, FL",Panama City,FL
+8729210,"Panama City Beach, FL",Panama City Beach,FL
+8729840,"Pensacola, FL",Pensacola,FL
+8670870,"Fort Pulaski, GA",Fort Pulaski,GA
+8679598,"Kings Bay MSF Pier, GA",Kings Bay MSF Pier,GA
+9063020,"Buffalo, NY",Buffalo,NY
+9063028,"Sturgeon Point, NY",Sturgeon Point,NY
+9063038,"Erie, Lake Erie, PA","Erie, Lake Erie",PA
+9063053,"Fairport, OH",Fairport,OH
+9063063,"Cleveland, OH",Cleveland,OH
+9063079,"Marblehead, OH",Marblehead,OH
+9063085,"Toledo, OH",Toledo,OH
+9075014,"Harbor Beach, MI",Harbor Beach,MI
+9075065,"Alpena, MI",Alpena,MI
+9075080,"Mackinaw City, MI",Mackinaw City,MI
+9075099,"De Tour Village, MI",De Tour Village,MI
+9087023,"Ludington, MI",Ludington,MI
+9087031,"Holland, MI",Holland,MI
+9087044,"Calumet Harbor, IL",Calumet Harbor,IL
+9087069,"Kewaunee MET, WI",Kewaunee MET,WI
+9087077,"Green Bay East, WI",Green Bay East,WI
+9087088,"Menominee, MI",Menominee,MI
+9087096,"Port Inland, MI",Port Inland,MI
+9052000,"Cape Vincent, NY",Cape Vincent,NY
+9052030,"Oswego, NY",Oswego,NY
+9052058,"Rochester, NY",Rochester,NY
+9099004,"Point Iroquois, MI",Point Iroquois,MI
+9099018,"Marquette C.G., MI",Marquette C.G.,MI
+9099064,"Duluth, MN",Duluth,MN
+9099090,"Grand Marais, Lake Superior, MN","Grand Marais, Lake Superior",MN
+9063012,"Niagara Intake, NY",Niagara Intake,NY
+9014070,"Algonac, MI",Algonac,MI
+9014090,"Mouth of the Black River, MI",Mouth of the Black River,MI
+9014098,"Fort Gratiot, MI",Fort Gratiot,MI
+8311030,"Ogdensburg, NY",Ogdensburg,NY
+8311062,"Alexandria Bay, NY",Alexandria Bay,NY
+9076024,"Rock Cut, MI",Rock Cut,MI
+9076027,"West Neebish Island, MI",West Neebish Island,MI
+9076033,"Little Rapids, MI",Little Rapids,MI
+9076070,"S.W. Pier, St. Marys River, MI","S.W. Pier, St. Marys River",MI
+1611400,"Nawiliwili, HI",Nawiliwili,HI
+1612340,"Honolulu, HI",Honolulu,HI
+1612401,"Pearl Harbor, HI",Pearl Harbor,HI
+1612480,"Mokuoloe, HI",Mokuoloe,HI
+1615680,"Kahului, Kahului Harbor, HI","Kahului, Kahului Harbor",HI
+1617433,"Kawaihae, HI",Kawaihae,HI
+1617760,"Hilo, Hilo Bay, Kuhio Bay, HI","Hilo, Hilo Bay, Kuhio Bay",HI
+8760721,"Pilottown, LA",Pilottown,LA
+8760922,"Pilots Station East, S.W. Pass, LA","Pilots Station East, S.W. Pass",LA
+8761305,"Shell Beach, LA",Shell Beach,LA
+8761724,"Grand Isle, LA",Grand Isle,LA
+8761927,"New Canal Station, LA",New Canal Station,LA
+8761955,"Carrollton, LA",Carrollton,LA
+8762075,"Port Fourchon, Belle Pass, LA","Port Fourchon, Belle Pass",LA
+8762482,"West Bank 1, Bayou Gauche, LA","West Bank 1, Bayou Gauche",LA
+8764044,"Berwick, Atchafalaya River, LA","Berwick, Atchafalaya River",LA
+8764227,"LAWMA, Amerada Pass, LA","LAWMA, Amerada Pass",LA
+8764314,"Eugene Island, North of, Atchafalaya Bay, LA","Eugene Island, North of, Atchafalaya Bay",LA
+8766072,"Freshwater Canal Locks, LA",Freshwater Canal Locks,LA
+8767816,"Lake Charles, LA",Lake Charles,LA
+8767961,"Bulk Terminal, LA",Bulk Terminal,LA
+8768094,"Calcasieu Pass, LA",Calcasieu Pass,LA
+8410140,"Eastport, ME",Eastport,ME
+8411060,"Cutler Farris Wharf, ME",Cutler Farris Wharf,ME
+8413320,"Bar Harbor, ME",Bar Harbor,ME
+8418150,"Portland, ME",Portland,ME
+8419870,"Seavey Island, ME",Seavey Island,ME
+8570283,"Ocean City Inlet, MD",Ocean City Inlet,MD
+8571421,"Bishops Head, MD",Bishops Head,MD
+8571892,"Cambridge, MD",Cambridge,MD
+8573364,"Tolchester Beach, MD",Tolchester Beach,MD
+8573927,"Chesapeake City, MD",Chesapeake City,MD
+8574680,"Baltimore, MD",Baltimore,MD
+8574728,"Francis Scott Key Bridge, MD",Francis Scott Key Bridge,MD
+8575437,"Chesapeake Bay Bridge Visibility, MD",Chesapeake Bay Bridge Visibility,MD
+8575512,"Annapolis, MD",Annapolis,MD
+8577018,"Cove Point LNG Pier, MD",Cove Point LNG Pier,MD
+8577330,"Solomons Island, MD",Solomons Island,MD
+8578240,"Piney Point, MD",Piney Point,MD
+8443970,"Boston, MA",Boston,MA
+8447386,"Fall River, MA",Fall River,MA
+8447387,"Borden Flats Light at Fall River, MA",Borden Flats Light at Fall River,MA
+8447412,"Fall River Visibility, MA",Fall River Visibility,MA
+8447435,"Chatham, MA",Chatham,MA
+8447627,"New Bedford, Barrier Gate, MA","New Bedford, Barrier Gate",MA
+8447930,"Woods Hole, MA",Woods Hole,MA
+8449130,"Nantucket Island, MA",Nantucket Island,MA
+8741003,"Petit Bois Island, Port of Pascagoula, MS","Petit Bois Island, Port of Pascagoula",MS
+8741533,"Pascagoula NOAA Lab, MS",Pascagoula NOAA Lab,MS
+8747437,"Bay Waveland Yacht Club, MS",Bay Waveland Yacht Club,MS
+8530973,"Robbins Reef, NJ",Robbins Reef,NJ
+8531680,"Sandy Hook, NJ",Sandy Hook,NJ
+8534720,"Atlantic City, NJ",Atlantic City,NJ
+8536110,"Cape May, NJ",Cape May,NJ
+8537121,"Ship John Shoal, NJ",Ship John Shoal,NJ
+8539094,"Burlington, Delaware River, NJ","Burlington, Delaware River",NJ
+8510560,"Montauk, NY",Montauk,NY
+8516945,"Kings Point, NY",Kings Point,NY
+8518750,"The Battery, NY",The Battery,NY
+8518962,"Turkey Point, Hudson River NERRS, NY","Turkey Point, Hudson River NERRS",NY
+8519532,"Mariners Harbor, NY",Mariners Harbor,NY
+8651370,"Duck, NC",Duck,NC
+8652226,"JENNETTE'S PIER, NC",JENNETTE'S PIER,NC
+8652587,"Oregon Inlet Marina, NC",Oregon Inlet Marina,NC
+8654467,"USCG Station Hatteras, NC",USCG Station Hatteras,NC
+8656483,"Beaufort, Duke Marine Lab, NC","Beaufort, Duke Marine Lab",NC
+8658120,"Wilmington, NC",Wilmington,NC
+8658163,"Wrightsville Beach, NC",Wrightsville Beach,NC
+9431647,"Port Orford, OR",Port Orford,OR
+9432780,"Charleston, OR",Charleston,OR
+9435380,"South Beach, OR",South Beach,OR
+1619910,"Sand Island, Midway Islands, United States of America","Sand Island, Midway Islands",United States of America
+1630000,"Apra Harbor, Guam, United States of America","Apra Harbor, Guam",United States of America
+1631428,"Pago Bay, Guam, United States of America","Pago Bay, Guam",United States of America
+1770000,"Pago Pago, American Samoa, American Samoa","Pago Pago, American Samoa",American Samoa
+1820000,"Kwajalein, Marshall Islands, United States of America","Kwajalein, Marshall Islands",United States of America
+1890000,"Wake Island, Pacific Ocean, United States of America","Wake Island, Pacific Ocean",United States of America
+8540433,"Marcus Hook, PA",Marcus Hook,PA
+8545240,"Philadelphia, PA",Philadelphia,PA
+8546252,"Bridesburg, PA",Bridesburg,PA
+8548989,"Newbold, PA",Newbold,PA
+8452314,"Sandy Point Visibility, Prudence Island, RI","Sandy Point Visibility, Prudence Island",RI
+8452660,"Newport, RI",Newport,RI
+8452944,"Conimicut Light, RI",Conimicut Light,RI
+8452951,"Potter Cove, Prudence Island, RI","Potter Cove, Prudence Island",RI
+8453662,"Providence Visibility, RI",Providence Visibility,RI
+8454000,"Providence, RI",Providence,RI
+8454049,"Quonset Point, RI",Quonset Point,RI
+8454123,"Port of Davisville, RI",Port of Davisville,RI
+8661070,"Springmaid Pier, SC",Springmaid Pier,SC
+8665530,"Charleston, SC",Charleston,SC
+8770475,"Port Arthur, TX",Port Arthur,TX
+8770613,"Morgans Point, Barbours Cut, TX","Morgans Point, Barbours Cut",TX
+8770777,"Manchester, TX",Manchester,TX
+8770808,"High Island, TX",High Island,TX
+8770822,"Texas Point, Sabine Pass, TX","Texas Point, Sabine Pass",TX
+8770971,"Rollover Pass, TX",Rollover Pass,TX
+8771013,"Eagle Point, Galveston Bay, TX","Eagle Point, Galveston Bay",TX
+8771341,"Galveston Bay Entrance, North Jetty, TX","Galveston Bay Entrance, North Jetty",TX
+8771450,"Galveston Pier 21, TX",Galveston Pier 21,TX
+8771486,"Galveston Railroad Bridge, TX",Galveston Railroad Bridge,TX
+8771972,"San Luis Pass, TX",San Luis Pass,TX
+8772471,"Freeport Harbor, TX",Freeport Harbor,TX
+8773037,"Seadrift, TX",Seadrift,TX
+8773146,"Matagorda City, TX",Matagorda City,TX
+8773259,"Port Lavaca, TX",Port Lavaca,TX
+8773701,"Port O'Connor, TX",Port O'Connor,TX
+8773767,"Matagorda Bay Entrance Channel, TX",Matagorda Bay Entrance Channel,TX
+8774230,"Aransas Wildlife Refuge, TX",Aransas Wildlife Refuge,TX
+8774770,"Rockport, TX",Rockport,TX
+8775132,"La Quinta Channel North, TX",La Quinta Channel North,TX
+8775222,"Viola Turning Basin, TX",Viola Turning Basin,TX
+8775223,"Harbor Island Visibility, TX",Harbor Island Visibility,TX
+8775236,"UTMSI Visibility, TX",UTMSI Visibility,TX
+8775237,"Port Aransas, TX",Port Aransas,TX
+8775241,"Aransas, Aransas Pass, TX","Aransas, Aransas Pass",TX
+8775283,"Enbridge, Ingleside, TX","Enbridge, Ingleside",TX
+8775285,"Tule Lake Visibility, TX",Tule Lake Visibility,TX
+8775296,"USS Lexington, Corpus Christi Bay, TX","USS Lexington, Corpus Christi Bay",TX
+8775302,"Texas State Aquarium Visibility, TX",Texas State Aquarium Visibility,TX
+8775792,"Packery Channel, TX",Packery Channel,TX
+8776139,"S. Bird Island, TX",S. Bird Island,TX
+8776604,"Baffin Bay, TX",Baffin Bay,TX
+8777812,"Rincon Del San Jose, TX",Rincon Del San Jose,TX
+8778490,"Port Mansfield, TX",Port Mansfield,TX
+8779280,"Realitos Peninsula, TX",Realitos Peninsula,TX
+8779748,"South Padre Island CG Station, TX",South Padre Island CG Station,TX
+8779749,"SPI Brazos Santiago, TX",SPI Brazos Santiago,TX
+8779770,"Port Isabel, TX",Port Isabel,TX
+8631044,"Wachapreague, VA",Wachapreague,VA
+8632200,"Kiptopeke, VA",Kiptopeke,VA
+8632837,"Rappahannock Light, VA",Rappahannock Light,VA
+8635027,"Dahlgren, VA",Dahlgren,VA
+8635750,"Lewisetta, VA",Lewisetta,VA
+8637689,"Yorktown USCG Training Center, VA",Yorktown USCG Training Center,VA
+8638511,"Dominion Terminal Associates, VA",Dominion Terminal Associates,VA
+8638595,"South Craney Island, VA",South Craney Island,VA
+8638610,"Sewells Point, VA",Sewells Point,VA
+8638614,"Willoughby Degaussing Station, VA",Willoughby Degaussing Station,VA
+8638901,"CBBT, Chesapeake Channel, VA","CBBT, Chesapeake Channel",VA
+8638999,"Cape Henry, VA",Cape Henry,VA
+8639348,"Money Point, VA",Money Point,VA
+9440357,"TEMCO Kalama Terminal, WA",TEMCO Kalama Terminal,WA
+9440422,"Longview, WA",Longview,WA
+9440910,"Toke Point, WA",Toke Point,WA
+9441102,"Westport, WA",Westport,WA
+9442396,"La Push, Quillayute River, WA","La Push, Quillayute River",WA
+9443090,"Neah Bay, WA",Neah Bay,WA
+9444090,"Port Angeles, WA",Port Angeles,WA
+9444900,"Port Townsend, WA",Port Townsend,WA
+9445958,"Bremerton, WA",Bremerton,WA
+9446482,"Tacoma MET, WA",Tacoma MET,WA
+9446484,"Tacoma, WA",Tacoma,WA
+9449419,"Cherry Point South Dock, WA",Cherry Point South Dock,WA
+9449424,"Cherry Point, WA",Cherry Point,WA
+9449427,"Cherry Point North Dock, WA",Cherry Point North Dock,WA
+9449880,"Friday Harbor, WA",Friday Harbor,WA

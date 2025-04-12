@@ -1,0 +1,12 @@
+openai
+langchain
+streamlit
+langchain-openai
+langchain-community
+langchain_core
+langgraph
+langchain_pinecone
+earthengine-api
+joblib
+xgboost
+scikit-learn
