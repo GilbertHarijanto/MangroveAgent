@@ -118,6 +118,24 @@ class QueryIntent(BaseModel):
         'research': the user is asking a general knowledge question not tied to a specific place or data fetch.
         """
     )
+    include_plot: bool = Field(
+        default=False,
+        description="""
+        True if the user explicitly asks to visualize, plot, chart, or graph the data.
+        False otherwise.
+        """
+    )
+    plot_metric: Optional[Literal["ndvi", "wind_speed", "water_level", "all"]] = Field(
+        default=None,
+        description="""
+        The metric the user wants plotted. Use:
+        - 'ndvi' for NDVI requests
+        - 'wind_speed' for wind speed requests
+        - 'water_level' for water level/tide requests
+        - 'all' if they ask for all metrics
+        Return None if not requested.
+        """
+    )
     location: Optional[str] = Field(
         description="The geographic location specified in the query, if any. Return None if not found."
     )
@@ -151,6 +169,17 @@ Return:
     - If the location is in the United States, extract the 2-letter state abbreviation (e.g., "FL" for Florida, "LA" for Louisiana).
     - Return None if the location is outside the U.S. or cannot be inferred.
 
+- include_plot:
+    - True if the user explicitly asks for a plot, chart, graph, or visualization.
+    - False otherwise.
+
+- plot_metric:
+    - 'ndvi' for NDVI requests
+    - 'wind_speed' for wind speed requests
+    - 'water_level' for water level/tide requests
+    - 'all' if they ask for all metrics
+    - Return None if not requested
+
 Only use the allowed values for 'goal'. Do not guess location if it's unclear.
 """)
 
@@ -159,6 +188,8 @@ class State(TypedDict):
     # === User input & intent extraction ===
     user_query: str                             # Always provided by the user
     goal: Optional[str]                         # 'forecast' or 'research'
+    include_plot: Optional[bool]
+    plot_metric: Optional[str]
     location: Optional[str]                     # e.g. "Key West"
     state: Optional[str]                        # e.g. "FL"
     request_id: Optional[str]                   # request/session id
@@ -222,6 +253,8 @@ def extract_intent_node(state: dict) -> dict:
 
     return {
         "goal": intent.goal,
+        "include_plot": intent.include_plot,
+        "plot_metric": intent.plot_metric,
         "location": intent.location,
         "state": intent.state
     }
@@ -511,11 +544,18 @@ def generate_summary_node(state: State) -> dict:
         env = state.get("environmental_data") or {}
         wind = env.get("wind_speed")
         water = env.get("water_level")
+        ndvi = state.get("ndvi_prediction")
+
+        def _round_metric(value: Optional[float]) -> Optional[float]:
+            if value is None:
+                return None
+            return round(float(value), 3)
+
         response = get_summary_chain(llm).invoke({
             "user_query": state["user_query"],
-            "ndvi_prediction": state["ndvi_prediction"],
-            "wind_speed": wind,
-            "water_level": water
+            "ndvi_prediction": _round_metric(ndvi),
+            "wind_speed": _round_metric(wind),
+            "water_level": _round_metric(water)
         })
 
         return {
@@ -585,6 +625,54 @@ def forecast_chain(user_query: str, request_id: Optional[str] = None) -> str:
         state["request_id"] = request_id
     result = app.invoke(state)
     return result.get("summary", "No forecast available.")
+
+
+def _weekly_dates(count: int) -> list[str]:
+    if count <= 0:
+        return []
+    base_date = datetime.utcnow().date()
+    return [
+        (base_date - timedelta(weeks=(count - 1 - i))).isoformat()
+        for i in range(count)
+    ]
+
+
+def build_graph_data(state: dict, intent: QueryIntent) -> Optional[dict]:
+    wind = state.get("wind_lags") or []
+    water = state.get("water_lags") or []
+    ndvi = state.get("ndvi_lags") or []
+
+    if not any([wind, water, ndvi]):
+        return None
+
+    count = max(len(wind), len(water), len(ndvi))
+    dates = _weekly_dates(count)
+
+    def to_points(values: list[float]) -> list[dict]:
+        if not values:
+            return []
+        aligned_dates = dates[-len(values):]
+        return [
+            {"t": date, "v": round(float(value), 3)}
+            for date, value in zip(aligned_dates, values)
+        ]
+
+    series = [
+        {"name": "wind_speed", "unit": "mph", "points": to_points(wind)},
+        {"name": "water_level", "unit": "ft", "points": to_points(water)},
+        {"name": "ndvi", "unit": "index", "points": to_points(ndvi)},
+    ]
+
+    if intent.plot_metric and intent.plot_metric != "all":
+        series = [s for s in series if s["name"] == intent.plot_metric]
+
+    return {
+        "series": series,
+        "location": intent.location,
+        "state": intent.state,
+        "station_ids": state.get("station_ids") or {},
+        "gps": state.get("gps"),
+    }
 
 
 def run_research_chain(user_query: str) -> str:
@@ -667,6 +755,14 @@ def run_mangrove_agent(user_query: str, api_key: str) -> str:
         return f"Error processing query: {str(e)}"
 
 
+def run_mangrove_agent_structured(user_query: str, api_key: str) -> dict:
+    try:
+        llm = build_llm(api_key)
+        return _run_with_llm_structured(user_query, llm)
+    except Exception as e:
+        return {"reply": f"Error processing query: {str(e)}", "intent": None, "graph_data": None}
+
+
 def _run_with_llm(user_query: str, llm: ChatOpenAI) -> str:
     request_id = str(uuid.uuid4())
     log_event(
@@ -685,6 +781,8 @@ def _run_with_llm(user_query: str, llm: ChatOpenAI) -> str:
         "intent_detected",
         request_id=request_id,
         goal=intent.goal,
+        include_plot=intent.include_plot,
+        plot_metric=intent.plot_metric,
         location=intent.location,
         state=intent.state,
     )
@@ -722,6 +820,81 @@ def _run_with_llm(user_query: str, llm: ChatOpenAI) -> str:
             goal=intent.goal,
         )
         return "Unrecognized goal."
+
+
+def _run_with_llm_structured(user_query: str, llm: ChatOpenAI) -> dict:
+    request_id = str(uuid.uuid4())
+    log_event(
+        logging.INFO,
+        "request_start",
+        request_id=request_id,
+        goal="auto",
+    )
+
+    intent_chain = structured_llm or llm.with_structured_output(QueryIntent)
+    intent = intent_chain.invoke(
+        [system_prompt, HumanMessage(content=user_query)]
+    )
+    log_event(
+        logging.INFO,
+        "intent_detected",
+        request_id=request_id,
+        goal=intent.goal,
+        location=intent.location,
+        state=intent.state,
+    )
+
+    if intent.goal == "forecast":
+        result = app.invoke({
+            "user_query": user_query,
+            "request_id": request_id,
+        })
+        memory.save_context({"input": user_query}, {
+                            "output": result["summary"]})
+        log_event(
+            logging.INFO,
+            "forecast_response",
+            request_id=request_id,
+        )
+        graph_data = build_graph_data(result, intent)
+        return {
+            "reply": result["summary"],
+            "intent": intent.goal,
+            "include_plot": intent.include_plot,
+            "plot_metric": intent.plot_metric,
+            "graph_data": graph_data,
+        }
+
+    if intent.goal == "research":
+        raw_response = get_research_chain(llm).invoke({"question": user_query})
+        answer = raw_response.get("answer") if isinstance(
+            raw_response, dict) else str(raw_response)
+        log_event(
+            logging.INFO,
+            "research_response",
+            request_id=request_id,
+        )
+        return {
+            "reply": answer,
+            "intent": intent.goal,
+            "include_plot": intent.include_plot,
+            "plot_metric": intent.plot_metric,
+            "graph_data": None,
+        }
+
+    log_event(
+        logging.WARNING,
+        "intent_unrecognized",
+        request_id=request_id,
+        goal=intent.goal,
+    )
+    return {
+        "reply": "Unrecognized goal.",
+        "intent": intent.goal,
+        "include_plot": intent.include_plot,
+        "plot_metric": intent.plot_metric,
+        "graph_data": None,
+    }
 
 
 def print_chat_history():

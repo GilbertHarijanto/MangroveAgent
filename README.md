@@ -60,5 +60,13 @@ cd mangrovegpt
 # Install dependencies
 pip install -r requirements.txt
 
-# Launch Streamlit app
+# Launch FastAPI backend
+uvicorn backend.main:app --reload
+
+# In a separate terminal, launch React frontend
+cd frontend
+npm install
+npm run dev
+
+# Optional: legacy Streamlit app
 streamlit run app.py

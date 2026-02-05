@@ -1,6 +1,9 @@
 openai
 langchain
 streamlit
+python-dotenv
+fastapi
+uvicorn
 langchain-openai
 langchain-community
 langchain-classic
