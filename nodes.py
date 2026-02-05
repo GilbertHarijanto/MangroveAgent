@@ -1,4 +1,6 @@
 from typing import Literal
+import logging
+import time
 import os
 import re
 import datetime as dt
@@ -9,8 +11,36 @@ import ee
 from datetime import datetime, timedelta
 from typing import Optional, Literal
 from langchain_openai import ChatOpenAI
+try:
+    import streamlit as st
+except Exception:  # pragma: no cover - streamlit optional for non-UI usage
+    st = None
 
 
+# --- Logging ---
+logger = logging.getLogger("mangrove_agent")
+
+
+def log_event(level: int, message: str, **fields) -> None:
+    context = " ".join(f"{key}={value}" for key, value in fields.items())
+    logger.log(level, f"{message} | {context}" if context else message)
+
+
+def get_request_id(state: dict | None) -> str:
+    if not state:
+        return "unknown"
+    return state.get("request_id") or "unknown"
+
+
+def cache_data(ttl: int):
+    def decorator(func):
+        if st is None:
+            return func
+        return st.cache_data(ttl=ttl, show_spinner=False)(func)
+    return decorator
+
+
+@cache_data(ttl=7 * 24 * 60 * 60)
 def geocode_location(location_name: str):
     url = f"https://nominatim.openstreetmap.org/search?q={location_name}&format=json"
     r = requests.get(url, headers={"User-Agent": "LangGraph-Mangrove-Agent"})
@@ -26,19 +56,40 @@ def resolve_gps_from_location_node(state: dict) -> dict:
     location = state.get("location")
     state_abbr = state.get("state")
 
-    print(f"[resolve_gps] location={location}, state={state_abbr}")
+    log_event(
+        logging.INFO,
+        "resolve_gps_start",
+        request_id=get_request_id(state),
+        location=location,
+        state=state_abbr,
+    )
 
     if not location:
-        print("[resolve_gps] Missing location.")
+        log_event(
+            logging.WARNING,
+            "resolve_gps_missing_location",
+            request_id=get_request_id(state),
+        )
         return {"gps": None}
 
     try:
         query = location if not state_abbr else f"{location}, {state_abbr}"
         lat, lon = geocode_location(query)
-        print(f"[resolve_gps] Geocoded → {lat}, {lon}")
+        log_event(
+            logging.INFO,
+            "resolve_gps_success",
+            request_id=get_request_id(state),
+            lat=lat,
+            lon=lon,
+        )
         return {"gps": (lat, lon)}
     except Exception as e:
-        print("[resolve_gps] Error:", e)
+        log_event(
+            logging.ERROR,
+            "resolve_gps_error",
+            request_id=get_request_id(state),
+            error=str(e),
+        )
         return {"gps": None}
 
 
@@ -73,9 +124,12 @@ def ask_llm_rank_stations(location: str, station_list: list[dict], variable: str
 
     response = llm.invoke(prompt).content
     # Raw LLM Output
-    print(f"=== Top 5 Nearest {variable.title()} Station ===")
-    print(response)
-    print()
+    log_event(
+        logging.INFO,
+        "ranked_stations_response",
+        variable=variable,
+        response=response,
+    )
 
     # Normalize and remove list numbering (e.g., "1. Station Name")
     ranked_names = [
@@ -93,17 +147,13 @@ def ask_llm_rank_stations(location: str, station_list: list[dict], variable: str
     return matched[:5]
 
 
-def select_station_by_location_node(state: dict) -> dict:
-    location = state.get("location")
-    state_abbr = state.get("state")
-
-    # Filter station lists by state
+@cache_data(ttl=7 * 24 * 60 * 60)
+def select_station_by_location_cached(location: str, state_abbr: str) -> dict:
     wind_stations = load_stations(
         "stations/wind_speed_stations.csv", state_abbr)
     water_stations = load_stations(
         "stations/water_level_stations.csv", state_abbr)
 
-    # Exit early if state is not in CSV = nothing to process = avoid indexing
     if not wind_stations and not water_stations:
         return {
             "station_ids": {},
@@ -111,7 +161,6 @@ def select_station_by_location_node(state: dict) -> dict:
             "data_available": []
         }
 
-    # Ask LLM to rank stations by proximity to 'location'
     ranked_wind = ask_llm_rank_stations(location, wind_stations, "wind")
     ranked_water = ask_llm_rank_stations(
         location, water_stations, "water level")
@@ -128,6 +177,21 @@ def select_station_by_location_node(state: dict) -> dict:
     }
 
 
+def select_station_by_location_node(state: dict) -> dict:
+    location = state.get("location")
+    state_abbr = state.get("state")
+
+    if not location or not state_abbr:
+        return {
+            "station_ids": {},
+            "station_candidates": {},
+            "data_available": []
+        }
+
+    return select_station_by_location_cached(location, state_abbr)
+
+
+@cache_data(ttl=5 * 60)
 def fetch_wind_speed(station_id: str) -> Optional[float]:
     url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
     params = {
@@ -142,21 +206,36 @@ def fetch_wind_speed(station_id: str) -> Optional[float]:
     try:
         r = requests.get(url, params=params, timeout=5)
         if not r.ok:
-            print(f"[{station_id}] Bad response: {r.status_code}")
+            log_event(
+                logging.WARNING,
+                "noaa_wind_bad_response",
+                station_id=station_id,
+                status_code=r.status_code,
+            )
             return None
 
         data = r.json()
         if "data" not in data or not data["data"]:
-            print(f"[{station_id}] No 'data' in wind response")
+            log_event(
+                logging.WARNING,
+                "noaa_wind_no_data",
+                station_id=station_id,
+            )
             return None
 
         wind_speed = float(data["data"][0]["s"])
         return wind_speed
     except Exception as e:
-        print(f"[{station_id}] Wind speed fetch error: {e}")
+        log_event(
+            logging.ERROR,
+            "noaa_wind_fetch_error",
+            station_id=station_id,
+            error=str(e),
+        )
         return None
 
 
+@cache_data(ttl=5 * 60)
 def fetch_water_level(station_id: str) -> Optional[float]:
     url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
     params = {
@@ -175,10 +254,19 @@ def fetch_water_level(station_id: str) -> Optional[float]:
         data = r.json()
         if "data" in data and data["data"]:
             return float(data["data"][0]["v"])
-        print(f"[{station_id}] No data in response.")
+        log_event(
+            logging.WARNING,
+            "noaa_water_no_data",
+            station_id=station_id,
+        )
         return None
     except Exception as e:
-        print(f"[{station_id}] Water level fetch error: {e}")
+        log_event(
+            logging.ERROR,
+            "noaa_water_fetch_error",
+            station_id=station_id,
+            error=str(e),
+        )
         return None
 
 
@@ -212,6 +300,7 @@ def fetch_environmental_data_node(state: dict) -> dict:
     }
 
 
+@cache_data(ttl=6 * 60 * 60)
 def get_cleaned_weekly_ndvi_series(lat: float, lon: float, days_back: int = 70) -> list[float]:
     point = ee.Geometry.Point([lon, lat])
     study_area = point.buffer(16000)
@@ -250,19 +339,19 @@ def get_cleaned_weekly_ndvi_series(lat: float, lon: float, days_back: int = 70) 
         raise ValueError(
             f"Not enough data. Got {len(ndvi_floats)} daily values, need at least 56.")
 
-    weekly_ndvi = []
-    for i in range(0, len(ndvi_floats) - 56 + 56, 7):
-        chunk = ndvi_floats[i:i+7]
-        if len(chunk) == 7:
-            weekly_ndvi.append(sum(chunk) / 7)
+    ndvi_floats = ndvi_floats[-56:]
+    weekly_ndvi = [
+        sum(ndvi_floats[i:i + 7]) / 7 for i in range(0, 56, 7)
+    ]
 
     if len(weekly_ndvi) < 8:
         raise ValueError(
             f"Only {len(weekly_ndvi)} weekly values found, need 8.")
 
-    return weekly_ndvi[-8:]
+    return weekly_ndvi
 
 
+@cache_data(ttl=60 * 60)
 def fetch_weekly_noaa_lags_chunked(station_id: str, product: str, total_days: int = 56) -> list[float]:
 
     end = datetime.utcnow().date()
@@ -307,10 +396,21 @@ def fetch_weekly_noaa_lags_chunked(station_id: str, product: str, total_days: in
             all_dfs.append(df)
 
         except Exception as e:
-            print(f"Chunk {chunk_start}–{chunk_end} failed: {e}")
+            log_event(
+                logging.WARNING,
+                "noaa_chunk_failed",
+                product=product,
+                chunk_start=chunk_start,
+                chunk_end=chunk_end,
+                error=str(e),
+            )
 
     if not all_dfs:
-        print(f"No valid data collected for {product}.")
+        log_event(
+            logging.WARNING,
+            "noaa_no_valid_data",
+            product=product,
+        )
         return []
 
     full_df = pd.concat(all_dfs).sort_index()
@@ -320,8 +420,13 @@ def fetch_weekly_noaa_lags_chunked(station_id: str, product: str, total_days: in
     weekly = full_df[value_col].resample("W").mean().dropna()
 
     if len(weekly) < 8:
-        print(
-            f"Only {len(weekly)} weekly values found for {product}, expected 8.")
+        log_event(
+            logging.WARNING,
+            "noaa_insufficient_weekly_values",
+            product=product,
+            count=len(weekly),
+            expected=8,
+        )
         return weekly.tolist()  # Return whatever we have
 
     return weekly.tail(8).tolist()
@@ -337,7 +442,11 @@ def build_feature_vector_node(state: dict) -> dict:
         ndvi_vals = get_cleaned_weekly_ndvi_series(*state["gps"])
 
         if len(wind_vals) < 8 or len(water_vals) < 8 or len(ndvi_vals) < 8:
-            print("Insufficient weekly data.")
+            log_event(
+                logging.WARNING,
+                "feature_vector_insufficient_weekly_data",
+                request_id=get_request_id(state),
+            )
             return {"feature_vector": [], "feature_df": None}
 
         # Build DataFrame (already in chronological order: oldest → newest)
@@ -371,7 +480,12 @@ def build_feature_vector_node(state: dict) -> dict:
                 for i in range(1, 8)]
         ].tolist()
 
-        print("[feature vector]", features)
+        log_event(
+            logging.INFO,
+            "feature_vector_built",
+            request_id=get_request_id(state),
+            feature_count=len(features),
+        )
 
         return {
             "feature_vector": features,
@@ -379,18 +493,32 @@ def build_feature_vector_node(state: dict) -> dict:
         }
 
     except Exception as e:
-        print("Feature vector error:", e)
+        log_event(
+            logging.ERROR,
+            "feature_vector_error",
+            request_id=get_request_id(state),
+            error=str(e),
+        )
         return {"feature_vector": [], "feature_df": None}
 
 
 def fetch_ndvi_lags_node(state: dict) -> dict:
     gps = state.get("gps")
     if not gps:
-        print("[ndvi lags] GPS missing")
+        log_event(
+            logging.WARNING,
+            "ndvi_lags_missing_gps",
+            request_id=get_request_id(state),
+        )
         return {"ndvi_lags": []}
     lat, lon = gps
     ndvi_lags = get_cleaned_weekly_ndvi_series(lat, lon)[:7]
-    print("[ndvi lags]", ndvi_lags)
+    log_event(
+        logging.INFO,
+        "ndvi_lags_complete",
+        request_id=get_request_id(state),
+        count=len(ndvi_lags),
+    )
     return {"ndvi_lags": ndvi_lags}
 
 
@@ -399,8 +527,13 @@ def fetch_weekly_lags_node(state: dict) -> dict:
     wind = fetch_weekly_noaa_lags_chunked(stations.get("wind"), "wind")
     water = fetch_weekly_noaa_lags_chunked(
         stations.get("water"), "water_level")
-    print("[wind lags]", wind)
-    print("[water lags]", water)
+    log_event(
+        logging.INFO,
+        "noaa_lags_complete",
+        request_id=get_request_id(state),
+        wind_count=len(wind),
+        water_count=len(water),
+    )
     return {"wind_lags": wind, "water_lags": water}
 
 

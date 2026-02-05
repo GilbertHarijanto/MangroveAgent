@@ -1,6 +1,9 @@
 from typing import Literal
+import logging
 import os
 import re
+import time
+import uuid
 import datetime as dt
 import requests
 import pandas as pd
@@ -13,11 +16,15 @@ from typing import TypedDict
 from pydantic import BaseModel, Field
 
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_core.messages import SystemMessage
+try:
+    import streamlit as st
+except Exception:  # pragma: no cover - streamlit optional for non-UI usage
+    st = None
+from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
-from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ConversationBufferMemory
+from langchain_classic.chains import ConversationalRetrievalChain
+from langchain_classic.memory import ConversationBufferMemory
 from langchain_pinecone import Pinecone
 from langgraph.graph import StateGraph, END
 
@@ -32,10 +39,68 @@ from nodes import (
 )
 
 
+# --- Logging ---
+logger = logging.getLogger("mangrove_agent")
+if not logger.handlers:
+    log_level = os.getenv("MANGROVE_LOG_LEVEL", "INFO").upper()
+    logging.basicConfig(level=getattr(logging, log_level, logging.INFO))
+
+
+def log_event(level: int, message: str, **fields) -> None:
+    context = " ".join(f"{key}={value}" for key, value in fields.items())
+    logger.log(level, f"{message} | {context}" if context else message)
+
+
+def get_request_id(state: Optional[dict]) -> str:
+    if not state:
+        return "unknown"
+    return state.get("request_id") or "unknown"
+
+
+def timed_node(node_name: str, fn):
+    def _inner(state: dict) -> dict:
+        start = time.perf_counter()
+        request_id = get_request_id(state)
+        try:
+            result = fn(state)
+            duration_ms = int((time.perf_counter() - start) * 1000)
+            log_event(
+                logging.INFO,
+                "node_complete",
+                request_id=request_id,
+                node=node_name,
+                latency_ms=duration_ms,
+            )
+            return result
+        except Exception as e:
+            duration_ms = int((time.perf_counter() - start) * 1000)
+            log_event(
+                logging.ERROR,
+                "node_error",
+                request_id=request_id,
+                node=node_name,
+                latency_ms=duration_ms,
+                error=str(e),
+            )
+            raise
+
+    return _inner
+
+
+def cache_data(ttl: int):
+    def decorator(func):
+        if st is None:
+            return func
+        return st.cache_data(ttl=ttl, show_spinner=False)(func)
+    return decorator
+
+
 # --- API Keys and Auth ---
-os.environ['OPENAI_API_KEY'] = os.getenv('OPENAI_API_KEY')
-os.environ['PINECONE_API_KEY'] = os.getenv('PINECONE_API_KEY')
-os.environ['PINECONE_INDEX_NAME'] = 'mangrove-index'
+if os.getenv("OPENAI_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
+if os.getenv("PINECONE_API_KEY"):
+    os.environ["PINECONE_API_KEY"] = os.getenv("PINECONE_API_KEY")
+os.environ["PINECONE_INDEX_NAME"] = "mangrove-index"
 
 # Earth Engine setup
 try:
@@ -44,10 +109,6 @@ except Exception:
     ee.Authenticate()
     # Replace with your GCP EE project
     ee.Initialize(project='ee-lgharijanto123')
-
-# --- LLM Setup ---
-llm = ChatOpenAI(model="gpt-4o", temperature=0.8)
-
 
 # --- Pydantic Intent Schema ---
 class QueryIntent(BaseModel):
@@ -67,6 +128,11 @@ class QueryIntent(BaseModel):
     Return None if the query doesn't reference a U.S. state.
     """
     )
+
+# --- LLM Setup (initialized lazily after API key is available) ---
+llm: Optional[ChatOpenAI] = None
+structured_llm: Optional[Runnable] = None
+INTENT_MODEL = os.getenv("MANGROVE_INTENT_MODEL", "gpt-4o-mini")
 
 
 system_prompt = SystemMessage(content="""
@@ -88,8 +154,6 @@ Return:
 Only use the allowed values for 'goal'. Do not guess location if it's unclear.
 """)
 
-structured_llm = llm.with_structured_output(QueryIntent)
-
 
 class State(TypedDict):
     # === User input & intent extraction ===
@@ -97,6 +161,7 @@ class State(TypedDict):
     goal: Optional[str]                         # 'forecast' or 'research'
     location: Optional[str]                     # e.g. "Key West"
     state: Optional[str]                        # e.g. "FL"
+    request_id: Optional[str]                   # request/session id
 
     # === Location resolution ===
     gps: Optional[Tuple[float, float]]          # (lat, lon)
@@ -131,18 +196,29 @@ scaler = joblib.load("models/scaler.pkl")
 # --- Memory and Retriever ---
 memory = ConversationBufferMemory(
     memory_key="chat_history", return_messages=True)
-embeddings = OpenAIEmbeddings()
-db = Pinecone.from_existing_index(
-    index_name="mangrove-index", embedding=embeddings)
-retriever = db.as_retriever()
-research_chain = ConversationalRetrievalChain.from_llm(
-    llm, retriever=retriever, memory=memory)
+embeddings: Optional[OpenAIEmbeddings] = None
+retriever = None
+research_chain = None
+
+
+def get_research_chain(llm: ChatOpenAI):
+    global embeddings, retriever, research_chain
+    if research_chain is None:
+        embeddings = OpenAIEmbeddings()
+        db = Pinecone.from_existing_index(
+            index_name="mangrove-index", embedding=embeddings)
+        retriever = db.as_retriever()
+        research_chain = ConversationalRetrievalChain.from_llm(
+            llm, retriever=retriever, memory=memory)
+    return research_chain
 
 
 def extract_intent_node(state: dict) -> dict:
     user_query = state["user_query"]
 
-    intent = structured_llm.invoke([system_prompt, user_query])
+    intent = structured_llm.invoke(
+        [system_prompt, HumanMessage(content=user_query)]
+    )
 
     return {
         "goal": intent.goal,
@@ -151,6 +227,7 @@ def extract_intent_node(state: dict) -> dict:
     }
 
 
+@cache_data(ttl=5 * 60)
 def fetch_wind_speed(station_id: str) -> Optional[float]:
     url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
     params = {
@@ -165,21 +242,36 @@ def fetch_wind_speed(station_id: str) -> Optional[float]:
     try:
         r = requests.get(url, params=params, timeout=5)
         if not r.ok:
-            print(f"[{station_id}] Bad response: {r.status_code}")
+            log_event(
+                logging.WARNING,
+                "noaa_wind_bad_response",
+                station_id=station_id,
+                status_code=r.status_code,
+            )
             return None
 
         data = r.json()
         if "data" not in data or not data["data"]:
-            print(f"[{station_id}] No 'data' in wind response")
+            log_event(
+                logging.WARNING,
+                "noaa_wind_no_data",
+                station_id=station_id,
+            )
             return None
 
         wind_speed = float(data["data"][0]["s"])
         return wind_speed
     except Exception as e:
-        print(f"[{station_id}] Wind speed fetch error: {e}")
+        log_event(
+            logging.ERROR,
+            "noaa_wind_fetch_error",
+            station_id=station_id,
+            error=str(e),
+        )
         return None
 
 
+@cache_data(ttl=5 * 60)
 def fetch_water_level(station_id: str) -> Optional[float]:
     url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
     params = {
@@ -198,10 +290,19 @@ def fetch_water_level(station_id: str) -> Optional[float]:
         data = r.json()
         if "data" in data and data["data"]:
             return float(data["data"][0]["v"])
-        print(f"[{station_id}] No data in response.")
+        log_event(
+            logging.WARNING,
+            "noaa_water_no_data",
+            station_id=station_id,
+        )
         return None
     except Exception as e:
-        print(f"[{station_id}] Water level fetch error: {e}")
+        log_event(
+            logging.ERROR,
+            "noaa_water_fetch_error",
+            station_id=station_id,
+            error=str(e),
+        )
         return None
 
 
@@ -213,6 +314,7 @@ def try_fetch_with_fallback(fetch_func, candidate_ids: list[str]) -> Optional[fl
     return None
 
 
+@cache_data(ttl=6 * 60 * 60)
 def get_cleaned_weekly_ndvi_series(lat: float, lon: float, days_back: int = 70) -> list[float]:
     point = ee.Geometry.Point([lon, lat])
     study_area = point.buffer(16000)
@@ -251,19 +353,19 @@ def get_cleaned_weekly_ndvi_series(lat: float, lon: float, days_back: int = 70) 
         raise ValueError(
             f"Not enough data. Got {len(ndvi_floats)} daily values, need at least 56.")
 
-    weekly_ndvi = []
-    for i in range(0, len(ndvi_floats) - 56 + 56, 7):
-        chunk = ndvi_floats[i:i+7]
-        if len(chunk) == 7:
-            weekly_ndvi.append(sum(chunk) / 7)
+    ndvi_floats = ndvi_floats[-56:]
+    weekly_ndvi = [
+        sum(ndvi_floats[i:i + 7]) / 7 for i in range(0, 56, 7)
+    ]
 
     if len(weekly_ndvi) < 8:
         raise ValueError(
             f"Only {len(weekly_ndvi)} weekly values found, need 8.")
 
-    return weekly_ndvi[-8:]
+    return weekly_ndvi
 
 
+@cache_data(ttl=60 * 60)
 def fetch_weekly_noaa_lags_chunked(station_id: str, product: str, total_days: int = 56) -> list[float]:
 
     end = datetime.utcnow().date()
@@ -308,10 +410,21 @@ def fetch_weekly_noaa_lags_chunked(station_id: str, product: str, total_days: in
             all_dfs.append(df)
 
         except Exception as e:
-            print(f"Chunk {chunk_start}–{chunk_end} failed: {e}")
+            log_event(
+                logging.WARNING,
+                "noaa_chunk_failed",
+                product=product,
+                chunk_start=chunk_start,
+                chunk_end=chunk_end,
+                error=str(e),
+            )
 
     if not all_dfs:
-        print(f"No valid data collected for {product}.")
+        log_event(
+            logging.WARNING,
+            "noaa_no_valid_data",
+            product=product,
+        )
         return []
 
     full_df = pd.concat(all_dfs).sort_index()
@@ -321,8 +434,13 @@ def fetch_weekly_noaa_lags_chunked(station_id: str, product: str, total_days: in
     weekly = full_df[value_col].resample("W").mean().dropna()
 
     if len(weekly) < 8:
-        print(
-            f"Only {len(weekly)} weekly values found for {product}, expected 8.")
+        log_event(
+            logging.WARNING,
+            "noaa_insufficient_weekly_values",
+            product=product,
+            count=len(weekly),
+            expected=8,
+        )
         return weekly.tolist()  # Return whatever we have
 
     return weekly.tail(8).tolist()
@@ -332,7 +450,12 @@ def predict_ndvi_node(state: dict) -> dict:
     try:
         features = state.get("feature_vector")
         if not features or len(features) != 23:
-            print("Invalid or missing feature vector")
+            log_event(
+                logging.WARNING,
+                "prediction_invalid_feature_vector",
+                request_id=get_request_id(state),
+                feature_count=0 if not features else len(features),
+            )
             return {"ndvi_prediction": None}
 
         X = pd.DataFrame([features], columns=scaler.feature_names_in_)
@@ -340,12 +463,22 @@ def predict_ndvi_node(state: dict) -> dict:
         X_scaled = scaler.transform(X)
 
         pred = xgb_model.predict(X_scaled)[0]
-        print("NDVI Prediction:", pred)
+        log_event(
+            logging.INFO,
+            "prediction_complete",
+            request_id=get_request_id(state),
+            ndvi_prediction=pred,
+        )
 
         return {"ndvi_prediction": float(pred)}
 
     except Exception as e:
-        print("Prediction error:", e)
+        log_event(
+            logging.ERROR,
+            "prediction_error",
+            request_id=get_request_id(state),
+            error=str(e),
+        )
         return {"ndvi_prediction": None}
 
 
@@ -363,16 +496,26 @@ Generate a clear, concise 5-6 sentence summary of the mangrove condition and any
 - **DO NOT MENTION MISSING OR UNAVAILABLE DATA**
 - If the query depends on geographic specificity and no location was found, consider asking the user to clarify a region.
 """)
-summary_chain: Runnable = summary_prompt | llm
+summary_chain: Optional[Runnable] = None
+
+
+def get_summary_chain(llm: ChatOpenAI) -> Runnable:
+    global summary_chain
+    if summary_chain is None:
+        summary_chain = summary_prompt | llm
+    return summary_chain
 
 
 def generate_summary_node(state: State) -> dict:
     try:
-        response = summary_chain.invoke({
+        env = state.get("environmental_data") or {}
+        wind = env.get("wind_speed")
+        water = env.get("water_level")
+        response = get_summary_chain(llm).invoke({
             "user_query": state["user_query"],
             "ndvi_prediction": state["ndvi_prediction"],
-            "wind_speed": state["environmental_data"]["wind_speed"],
-            "water_level": state["environmental_data"]["water_level"]
+            "wind_speed": wind,
+            "water_level": water
         })
 
         return {
@@ -380,15 +523,21 @@ def generate_summary_node(state: State) -> dict:
         }
 
     except Exception as e:
-        print("[summary] Error:", e)
+        log_event(
+            logging.ERROR,
+            "summary_error",
+            request_id=get_request_id(state),
+            error=str(e),
+        )
         return {"summary": "Unable to generate summary."}
 
 
 # --- Graph Setup ---
 workflow = StateGraph(State)
-workflow.add_node("extract_intent", extract_intent_node)
-workflow.add_node("exit_early", lambda state: {
-                  "final_output": "[ROUTED TO RESEARCH AGENT]"})
+workflow.add_node("extract_intent", timed_node(
+    "extract_intent", extract_intent_node))
+workflow.add_node("exit_early", timed_node("exit_early", lambda state: {
+    "final_output": "[ROUTED TO RESEARCH AGENT]"}))
 
 workflow.set_entry_point("extract_intent")
 workflow.add_conditional_edges("extract_intent", route_by_goal, {
@@ -396,54 +545,79 @@ workflow.add_conditional_edges("extract_intent", route_by_goal, {
     "research": "exit_early"
 })
 
-workflow.add_node("select_stations", select_station_by_location_node)
-workflow.add_node("resolve_gps", resolve_gps_from_location_node)
-workflow.add_node("fetch_environmental_data", fetch_environmental_data_node)
-workflow.add_node("fetch_weekly_lags", fetch_weekly_lags_node)
+workflow.add_node("select_stations", timed_node(
+    "select_stations", select_station_by_location_node))
+workflow.add_node("resolve_gps", timed_node(
+    "resolve_gps", resolve_gps_from_location_node))
+workflow.add_node("fetch_environmental_data", timed_node(
+    "fetch_environmental_data", fetch_environmental_data_node))
+workflow.add_node("fetch_weekly_lags", timed_node(
+    "fetch_weekly_lags", fetch_weekly_lags_node))
 
 workflow.add_edge("select_stations", "resolve_gps")
 workflow.add_edge("select_stations", "fetch_environmental_data")
 workflow.add_edge("select_stations", "fetch_weekly_lags")
 
-workflow.add_node("fetch_ndvi_lags", fetch_ndvi_lags_node)
+workflow.add_node("fetch_ndvi_lags", timed_node(
+    "fetch_ndvi_lags", fetch_ndvi_lags_node))
 workflow.add_edge("resolve_gps", "fetch_ndvi_lags")
 
-workflow.add_node("build_feature_vector", build_feature_vector_node)
-workflow.add_node("predict_ndvi", predict_ndvi_node)
-workflow.add_node("generate_summary", generate_summary_node)
+workflow.add_node("build_feature_vector", timed_node(
+    "build_feature_vector", build_feature_vector_node))
+workflow.add_node("predict_ndvi", timed_node(
+    "predict_ndvi", predict_ndvi_node))
+workflow.add_node("generate_summary", timed_node(
+    "generate_summary", generate_summary_node))
 
 workflow.add_edge("fetch_ndvi_lags", "build_feature_vector")
 workflow.add_edge("fetch_weekly_lags", "build_feature_vector")
 workflow.add_edge("build_feature_vector", "predict_ndvi")
 workflow.add_edge("predict_ndvi", "generate_summary")
+workflow.add_edge("fetch_environmental_data", "generate_summary")
 workflow.add_edge("generate_summary", END)
 
 app = workflow.compile()
 
 
-def forecast_chain(user_query: str) -> str:
-    result = app.invoke({"user_query": user_query})
+def forecast_chain(user_query: str, request_id: Optional[str] = None) -> str:
+    state = {"user_query": user_query}
+    if request_id:
+        state["request_id"] = request_id
+    result = app.invoke(state)
     return result.get("summary", "No forecast available.")
 
 
 def run_research_chain(user_query: str) -> str:
-    raw_response = research_chain.invoke({"question": user_query})
+    raw_response = get_research_chain(llm).invoke({"question": user_query})
     return raw_response.get("answer") if isinstance(raw_response, dict) else str(raw_response)
 
 
 def extract_goal_and_location(user_query: str):
-    intent = structured_llm.invoke([system_prompt, user_query])
+    intent = structured_llm.invoke(
+        [system_prompt, HumanMessage(content=user_query)]
+    )
     return intent.goal
 
 
 def run_agent(user_query: str):
-    print(f"🧪 User query: {user_query}")
+    request_id = str(uuid.uuid4())
+    log_event(
+        logging.INFO,
+        "request_start",
+        request_id=request_id,
+        goal="auto",
+    )
 
     goal = extract_goal_and_location(user_query)
-    print(f"🔍 Detected goal: {goal}")
+    log_event(
+        logging.INFO,
+        "intent_detected",
+        request_id=request_id,
+        goal=goal,
+    )
 
     if goal == "forecast":
-        final_output = forecast_chain(user_query)
+        final_output = forecast_chain(user_query, request_id=request_id)
 
         memory.save_context({"input": user_query}, {"output": final_output})
 
@@ -451,6 +625,12 @@ def run_agent(user_query: str):
         final_output = run_research_chain(user_query)
 
     else:
+        log_event(
+            logging.WARNING,
+            "intent_unrecognized",
+            request_id=request_id,
+            goal=goal,
+        )
         final_output = "Unrecognized goal."
 
     return {"final_output": final_output}
@@ -467,8 +647,16 @@ def run_agent(user_query: str):
 
 # --- Main Logic Refactored for Dynamic API Key ---
 def build_llm(api_key: str):
-    os.environ['OPENAI_API_KEY'] = api_key  # update environment
-    return ChatOpenAI(openai_api_key=api_key, model="gpt-4o", temperature=0.8)
+    global llm, structured_llm
+    os.environ["OPENAI_API_KEY"] = api_key  # update environment
+    llm = ChatOpenAI(openai_api_key=api_key, model="gpt-4o", temperature=0.8)
+    intent_llm = ChatOpenAI(
+        openai_api_key=api_key,
+        model=INTENT_MODEL,
+        temperature=0,
+    )
+    structured_llm = intent_llm.with_structured_output(QueryIntent)
+    return llm
 
 
 def run_mangrove_agent(user_query: str, api_key: str) -> str:
@@ -480,38 +668,72 @@ def run_mangrove_agent(user_query: str, api_key: str) -> str:
 
 
 def _run_with_llm(user_query: str, llm: ChatOpenAI) -> str:
-    print(f"🧪 User query: {user_query}")  # ✅ always log input
+    request_id = str(uuid.uuid4())
+    log_event(
+        logging.INFO,
+        "request_start",
+        request_id=request_id,
+        goal="auto",
+    )
 
-    intent_chain = llm.with_structured_output(QueryIntent)
-    intent = intent_chain.invoke([system_prompt, user_query])
-    print(f"🔍 Detected goal: {intent.goal}")  # ✅ log goal
+    intent_chain = structured_llm or llm.with_structured_output(QueryIntent)
+    intent = intent_chain.invoke(
+        [system_prompt, HumanMessage(content=user_query)]
+    )
+    log_event(
+        logging.INFO,
+        "intent_detected",
+        request_id=request_id,
+        goal=intent.goal,
+        location=intent.location,
+        state=intent.state,
+    )
 
     if intent.goal == "forecast":
-        result = app.invoke({"user_query": user_query})
+        result = app.invoke({
+            "user_query": user_query,
+            "request_id": request_id,
+        })
         memory.save_context({"input": user_query}, {
                             "output": result["summary"]})
-        print(f"🌤️ Forecast response: {result['summary']}")  # ✅ log output
+        log_event(
+            logging.INFO,
+            "forecast_response",
+            request_id=request_id,
+        )
         return result["summary"]
 
     elif intent.goal == "research":
-        chain = ConversationalRetrievalChain.from_llm(
-            llm, retriever=retriever, memory=memory)
-        raw_response = chain.invoke({"question": user_query})
+        raw_response = get_research_chain(llm).invoke({"question": user_query})
         answer = raw_response.get("answer") if isinstance(
             raw_response, dict) else str(raw_response)
-        print(f"📚 Research response: {answer}")  # ✅ log output
+        log_event(
+            logging.INFO,
+            "research_response",
+            request_id=request_id,
+        )
         return answer
 
     else:
-        print(f"Unknown goal: {intent.goal}")
+        log_event(
+            logging.WARNING,
+            "intent_unrecognized",
+            request_id=request_id,
+            goal=intent.goal,
+        )
         return "Unrecognized goal."
 
 
 def print_chat_history():
-    print("🧠 Chat History:")
+    log_event(logging.INFO, "chat_history_start")
     for msg in memory.chat_memory.messages:
         role = "👤 User" if msg.type == "human" else "🤖 Assistant"
-        print(f"{role}: {msg.content}\n")
+        log_event(
+            logging.INFO,
+            "chat_message",
+            role=role,
+            content=msg.content,
+        )
 
 
 # if __name__ == "__main__":

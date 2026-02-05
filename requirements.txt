@@ -3,6 +3,7 @@ langchain
 streamlit
 langchain-openai
 langchain-community
+langchain-classic
 langchain_core
 langgraph
 langchain_pinecone
