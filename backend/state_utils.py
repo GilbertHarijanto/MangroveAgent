@@ -54,6 +54,7 @@ STATE_NAME_TO_ABBR = {
 
 
 def extract_states(text: str) -> list[str]:
+    """Extract unique U.S. state abbreviations from text (full names and abbreviations); return list of 2-letter codes."""
     lowered = text.lower()
     found = []
 

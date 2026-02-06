@@ -9,6 +9,7 @@ import requests
 import pandas as pd
 import joblib
 import ee
+from threading import Lock
 
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, Dict, List, Literal
@@ -16,10 +17,8 @@ from typing import TypedDict
 from pydantic import BaseModel, Field
 
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-try:
-    import streamlit as st
-except Exception:  # pragma: no cover - streamlit optional for non-UI usage
-    st = None
+from cachetools import TTLCache, cached
+from cachetools.keys import hashkey
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
@@ -47,17 +46,21 @@ if not logger.handlers:
 
 
 def log_event(level: int, message: str, **fields) -> None:
+    """Log a structured event with key-value context to the mangrove_agent logger."""
     context = " ".join(f"{key}={value}" for key, value in fields.items())
     logger.log(level, f"{message} | {context}" if context else message)
 
 
 def get_request_id(state: Optional[dict]) -> str:
+    """Extract request_id from graph state; return 'unknown' if missing or empty."""
     if not state:
         return "unknown"
     return state.get("request_id") or "unknown"
 
 
 def timed_node(node_name: str, fn):
+    """Wrap a LangGraph node with timing and structured error logging."""
+
     def _inner(state: dict) -> dict:
         start = time.perf_counter()
         request_id = get_request_id(state)
@@ -87,11 +90,17 @@ def timed_node(node_name: str, fn):
     return _inner
 
 
-def cache_data(ttl: int):
+def cache_data(ttl: int, maxsize: int = 1024):
+    """
+    Wrap a function with an in-memory TTL cache (FastAPI/CLI compatible).
+    Uses cachetools.TTLCache and a lock for thread-safe access.
+    """
+
     def decorator(func):
-        if st is None:
-            return func
-        return st.cache_data(ttl=ttl, show_spinner=False)(func)
+        cache = TTLCache(maxsize=maxsize, ttl=ttl)
+        lock = Lock()
+        return cached(cache=cache, key=hashkey, lock=lock)(func)
+
     return decorator
 
 
@@ -121,8 +130,8 @@ class QueryIntent(BaseModel):
     include_plot: bool = Field(
         default=False,
         description="""
-        True if the user explicitly asks to visualize, plot, chart, or graph the data.
-        False otherwise.
+        True ONLY when the user explicitly asks for a plot/chart/graph/visualization (e.g. 'plot', 'chart', 'graph', 'visualize').
+        False for 'compare', 'vs', 'between', or general questions. Default False when unsure.
         """
     )
     plot_metric: Optional[Literal["ndvi", "wind_speed", "water_level", "all"]] = Field(
@@ -170,8 +179,8 @@ Return:
     - Return None if the location is outside the U.S. or cannot be inferred.
 
 - include_plot:
-    - True if the user explicitly asks for a plot, chart, graph, or visualization.
-    - False otherwise.
+    - True ONLY if the user uses explicit visualization words: "plot", "chart", "graph", "visualize", "visualization", "show me a chart/graph", "draw", "display a graph".
+    - False for "compare", "vs", "between", or general analysis questions. Default to False when unsure.
 
 - plot_metric:
     - 'ndvi' for NDVI requests
@@ -233,6 +242,7 @@ research_chain = None
 
 
 def get_research_chain(llm: ChatOpenAI):
+    """Build or return the cached RAG chain (Pinecone retriever + conversational chain)."""
     global embeddings, retriever, research_chain
     if research_chain is None:
         embeddings = OpenAIEmbeddings()
@@ -245,6 +255,7 @@ def get_research_chain(llm: ChatOpenAI):
 
 
 def extract_intent_node(state: dict) -> dict:
+    """LangGraph node: extract goal, location, state, include_plot, plot_metric from user query via LLM."""
     user_query = state["user_query"]
 
     intent = structured_llm.invoke(
@@ -262,6 +273,7 @@ def extract_intent_node(state: dict) -> dict:
 
 @cache_data(ttl=5 * 60)
 def fetch_wind_speed(station_id: str) -> Optional[float]:
+    """Fetch latest wind speed (mph) from NOAA Tides & Currents API for the given station. Cached 5 min."""
     url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
     params = {
         "date": "latest",
@@ -306,6 +318,7 @@ def fetch_wind_speed(station_id: str) -> Optional[float]:
 
 @cache_data(ttl=5 * 60)
 def fetch_water_level(station_id: str) -> Optional[float]:
+    """Fetch latest water level (ft, MLLW) from NOAA Tides & Currents API for the given station. Cached 5 min."""
     url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
     params = {
         "date": "latest",
@@ -340,6 +353,7 @@ def fetch_water_level(station_id: str) -> Optional[float]:
 
 
 def try_fetch_with_fallback(fetch_func, candidate_ids: list[str]) -> Optional[float]:
+    """Try candidate station IDs in order until a valid value is returned; otherwise None."""
     for station_id in candidate_ids:
         result = fetch_func(station_id)
         if result is not None:
@@ -349,6 +363,7 @@ def try_fetch_with_fallback(fetch_func, candidate_ids: list[str]) -> Optional[fl
 
 @cache_data(ttl=6 * 60 * 60)
 def get_cleaned_weekly_ndvi_series(lat: float, lon: float, days_back: int = 70) -> list[float]:
+    """Fetch MODIS NDVI around (lat, lon), aggregate to 8 weekly means (last 56 days). Cached 6h."""
     point = ee.Geometry.Point([lon, lat])
     study_area = point.buffer(16000)
 
@@ -400,7 +415,7 @@ def get_cleaned_weekly_ndvi_series(lat: float, lon: float, days_back: int = 70) 
 
 @cache_data(ttl=60 * 60)
 def fetch_weekly_noaa_lags_chunked(station_id: str, product: str, total_days: int = 56) -> list[float]:
-
+    """Fetch NOAA time series for station/product in chunks, resample to weekly means, return last 8. Cached 1h."""
     end = datetime.utcnow().date()
     start = end - timedelta(days=total_days)
 
@@ -480,6 +495,7 @@ def fetch_weekly_noaa_lags_chunked(station_id: str, product: str, total_days: in
 
 
 def predict_ndvi_node(state: dict) -> dict:
+    """LangGraph node: run XGBoost model on feature_vector and return ndvi_prediction."""
     try:
         features = state.get("feature_vector")
         if not features or len(features) != 23:
@@ -533,6 +549,7 @@ summary_chain: Optional[Runnable] = None
 
 
 def get_summary_chain(llm: ChatOpenAI) -> Runnable:
+    """Build or return the cached summary chain (prompt | llm)."""
     global summary_chain
     if summary_chain is None:
         summary_chain = summary_prompt | llm
@@ -540,6 +557,7 @@ def get_summary_chain(llm: ChatOpenAI) -> Runnable:
 
 
 def generate_summary_node(state: State) -> dict:
+    """LangGraph node: generate natural-language summary from NDVI, wind, water using the summary LLM."""
     try:
         env = state.get("environmental_data") or {}
         wind = env.get("wind_speed")
@@ -620,6 +638,7 @@ app = workflow.compile()
 
 
 def forecast_chain(user_query: str, request_id: Optional[str] = None) -> str:
+    """Run the forecast graph and return the summary text (or fallback message)."""
     state = {"user_query": user_query}
     if request_id:
         state["request_id"] = request_id
@@ -628,6 +647,7 @@ def forecast_chain(user_query: str, request_id: Optional[str] = None) -> str:
 
 
 def _weekly_dates(count: int) -> list[str]:
+    """Return a list of ISO date strings for the last `count` weeks (most recent last)."""
     if count <= 0:
         return []
     base_date = datetime.utcnow().date()
@@ -638,6 +658,7 @@ def _weekly_dates(count: int) -> list[str]:
 
 
 def build_graph_data(state: dict, intent: QueryIntent) -> Optional[dict]:
+    """Build chart-ready dict with series (wind, water, ndvi) from state; filter by intent.plot_metric if set."""
     wind = state.get("wind_lags") or []
     water = state.get("water_lags") or []
     ndvi = state.get("ndvi_lags") or []
@@ -676,11 +697,13 @@ def build_graph_data(state: dict, intent: QueryIntent) -> Optional[dict]:
 
 
 def run_research_chain(user_query: str) -> str:
+    """Run the RAG research chain for general mangrove questions; return answer string."""
     raw_response = get_research_chain(llm).invoke({"question": user_query})
     return raw_response.get("answer") if isinstance(raw_response, dict) else str(raw_response)
 
 
 def extract_goal_and_location(user_query: str):
+    """Extract intent (goal) from user query via structured LLM; return intent.goal."""
     intent = structured_llm.invoke(
         [system_prompt, HumanMessage(content=user_query)]
     )
@@ -688,6 +711,7 @@ def extract_goal_and_location(user_query: str):
 
 
 def run_agent(user_query: str):
+    """Run full agent (intent -> forecast or research) and return dict with final_output."""
     request_id = str(uuid.uuid4())
     log_event(
         logging.INFO,
@@ -735,6 +759,7 @@ def run_agent(user_query: str):
 
 # --- Main Logic Refactored for Dynamic API Key ---
 def build_llm(api_key: str):
+    """Initialize llm and structured_llm (intent extraction) with the given API key; return llm."""
     global llm, structured_llm
     os.environ["OPENAI_API_KEY"] = api_key  # update environment
     llm = ChatOpenAI(openai_api_key=api_key, model="gpt-4o", temperature=0.8)
@@ -748,6 +773,7 @@ def build_llm(api_key: str):
 
 
 def run_mangrove_agent(user_query: str, api_key: str) -> str:
+    """Public entry point: build LLM, run agent, return plain-text reply or error string."""
     try:
         llm = build_llm(api_key)
         return _run_with_llm(user_query, llm)
@@ -756,6 +782,7 @@ def run_mangrove_agent(user_query: str, api_key: str) -> str:
 
 
 def run_mangrove_agent_structured(user_query: str, api_key: str) -> dict:
+    """Public entry point: build LLM, run agent, return dict with reply, intent, include_plot, plot_metric, graph_data."""
     try:
         llm = build_llm(api_key)
         return _run_with_llm_structured(user_query, llm)
@@ -764,6 +791,7 @@ def run_mangrove_agent_structured(user_query: str, api_key: str) -> dict:
 
 
 def _run_with_llm(user_query: str, llm: ChatOpenAI) -> str:
+    """Run intent extraction and forecast/research path; return plain-text reply."""
     request_id = str(uuid.uuid4())
     log_event(
         logging.INFO,
@@ -823,6 +851,7 @@ def _run_with_llm(user_query: str, llm: ChatOpenAI) -> str:
 
 
 def _run_with_llm_structured(user_query: str, llm: ChatOpenAI) -> dict:
+    """Run intent extraction and forecast/research path; return dict with reply, intent, graph_data, etc."""
     request_id = str(uuid.uuid4())
     log_event(
         logging.INFO,
@@ -898,6 +927,7 @@ def _run_with_llm_structured(user_query: str, llm: ChatOpenAI) -> dict:
 
 
 def print_chat_history():
+    """Log the in-memory conversation history (memory.chat_memory.messages) to the mangrove_agent logger."""
     log_event(logging.INFO, "chat_history_start")
     for msg in memory.chat_memory.messages:
         role = "👤 User" if msg.type == "human" else "🤖 Assistant"

@@ -14,3 +14,4 @@ earthengine-api
 joblib
 xgboost
 scikit-learn
+cachetools

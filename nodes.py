@@ -9,12 +9,12 @@ import pandas as pd
 import ee
 
 from datetime import datetime, timedelta
+from threading import Lock
 from typing import Optional, Literal
+
 from langchain_openai import ChatOpenAI
-try:
-    import streamlit as st
-except Exception:  # pragma: no cover - streamlit optional for non-UI usage
-    st = None
+from cachetools import TTLCache, cached
+from cachetools.keys import hashkey
 
 
 # --- Logging ---
@@ -22,26 +22,35 @@ logger = logging.getLogger("mangrove_agent")
 
 
 def log_event(level: int, message: str, **fields) -> None:
+    """Log a structured event with key-value context to the mangrove_agent logger."""
     context = " ".join(f"{key}={value}" for key, value in fields.items())
     logger.log(level, f"{message} | {context}" if context else message)
 
 
 def get_request_id(state: dict | None) -> str:
+    """Extract request_id from graph state; return 'unknown' if missing or empty."""
     if not state:
         return "unknown"
     return state.get("request_id") or "unknown"
 
 
-def cache_data(ttl: int):
+def cache_data(ttl: int, maxsize: int = 1024):
+    """
+    Wrap a function with an in-memory TTL cache (FastAPI/CLI compatible).
+    Uses cachetools.TTLCache and a lock for thread-safe access.
+    """
+
     def decorator(func):
-        if st is None:
-            return func
-        return st.cache_data(ttl=ttl, show_spinner=False)(func)
+        cache = TTLCache(maxsize=maxsize, ttl=ttl)
+        lock = Lock()
+        return cached(cache=cache, key=hashkey, lock=lock)(func)
+
     return decorator
 
 
 @cache_data(ttl=7 * 24 * 60 * 60)
 def geocode_location(location_name: str):
+    """Resolve a location name to (lat, lon) via OpenStreetMap Nominatim. Cached 7 days."""
     url = f"https://nominatim.openstreetmap.org/search?q={location_name}&format=json"
     r = requests.get(url, headers={"User-Agent": "LangGraph-Mangrove-Agent"})
     data = r.json()
@@ -53,6 +62,7 @@ def geocode_location(location_name: str):
 
 
 def resolve_gps_from_location_node(state: dict) -> dict:
+    """LangGraph node: geocode location/state to (lat, lon) and return gps in state."""
     location = state.get("location")
     state_abbr = state.get("state")
 
@@ -94,6 +104,7 @@ def resolve_gps_from_location_node(state: dict) -> dict:
 
 
 def load_stations(csv_path: str, state_abbr: str) -> list[dict]:
+    """Load NOAA station CSV and return list of station dicts filtered by U.S. state abbreviation."""
     df = pd.read_csv(csv_path)
 
     # Ensure state column exists and is properly formatted
@@ -108,6 +119,7 @@ def load_stations(csv_path: str, state_abbr: str) -> list[dict]:
 
 
 def ask_llm_rank_stations(location: str, station_list: list[dict], variable: str) -> list[dict]:
+    """Use LLM to rank top 5 stations for a location and variable (wind/water); return matched station dicts."""
     # --- LLM Setup ---
     llm = ChatOpenAI(model="gpt-4o", temperature=0.8)
     station_names = [s['name'] for s in station_list]
@@ -149,6 +161,7 @@ def ask_llm_rank_stations(location: str, station_list: list[dict], variable: str
 
 @cache_data(ttl=7 * 24 * 60 * 60)
 def select_station_by_location_cached(location: str, state_abbr: str) -> dict:
+    """Select wind and water station IDs for a location/state via LLM ranking. Cached 7 days."""
     wind_stations = load_stations(
         "stations/wind_speed_stations.csv", state_abbr)
     water_stations = load_stations(
@@ -178,6 +191,7 @@ def select_station_by_location_cached(location: str, state_abbr: str) -> dict:
 
 
 def select_station_by_location_node(state: dict) -> dict:
+    """LangGraph node: select wind/water station IDs from state location and state; return station_ids and candidates."""
     location = state.get("location")
     state_abbr = state.get("state")
 
@@ -193,6 +207,7 @@ def select_station_by_location_node(state: dict) -> dict:
 
 @cache_data(ttl=5 * 60)
 def fetch_wind_speed(station_id: str) -> Optional[float]:
+    """Fetch latest wind speed (mph) from NOAA Tides & Currents for the given station. Cached 5 min."""
     url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
     params = {
         "date": "latest",
@@ -237,6 +252,7 @@ def fetch_wind_speed(station_id: str) -> Optional[float]:
 
 @cache_data(ttl=5 * 60)
 def fetch_water_level(station_id: str) -> Optional[float]:
+    """Fetch latest water level (ft, MLLW) from NOAA Tides & Currents for the given station. Cached 5 min."""
     url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
     params = {
         "date": "latest",
@@ -271,6 +287,7 @@ def fetch_water_level(station_id: str) -> Optional[float]:
 
 
 def try_fetch_with_fallback(fetch_func, candidate_ids: list[str]) -> Optional[float]:
+    """Try candidate station IDs in order until a valid value is returned; otherwise None."""
     for station_id in candidate_ids:
         result = fetch_func(station_id)
         if result is not None:
@@ -279,6 +296,7 @@ def try_fetch_with_fallback(fetch_func, candidate_ids: list[str]) -> Optional[fl
 
 
 def fetch_environmental_data_node(state: dict) -> dict:
+    """LangGraph node: fetch latest wind_speed and water_level from NOAA; return environmental_data in state."""
     stations = state.get("station_ids", {})
     candidates = state.get("station_candidates", {})
 
@@ -302,6 +320,7 @@ def fetch_environmental_data_node(state: dict) -> dict:
 
 @cache_data(ttl=6 * 60 * 60)
 def get_cleaned_weekly_ndvi_series(lat: float, lon: float, days_back: int = 70) -> list[float]:
+    """Fetch MODIS NDVI around (lat, lon), aggregate to 8 weekly means (last 56 days). Cached 6h."""
     point = ee.Geometry.Point([lon, lat])
     study_area = point.buffer(16000)
 
@@ -353,7 +372,7 @@ def get_cleaned_weekly_ndvi_series(lat: float, lon: float, days_back: int = 70) 
 
 @cache_data(ttl=60 * 60)
 def fetch_weekly_noaa_lags_chunked(station_id: str, product: str, total_days: int = 56) -> list[float]:
-
+    """Fetch NOAA time series for station/product in chunks, resample to weekly means, return last 8. Cached 1h."""
     end = datetime.utcnow().date()
     start = end - timedelta(days=total_days)
 
@@ -433,6 +452,7 @@ def fetch_weekly_noaa_lags_chunked(station_id: str, product: str, total_days: in
 
 
 def build_feature_vector_node(state: dict) -> dict:
+    """LangGraph node: build 23-dim feature vector (tide, wind, ndvi + lags) for XGBoost from state."""
     try:
         # Fetch 8 weeks (current + 7 lags)
         wind_vals = fetch_weekly_noaa_lags_chunked(
@@ -503,6 +523,7 @@ def build_feature_vector_node(state: dict) -> dict:
 
 
 def fetch_ndvi_lags_node(state: dict) -> dict:
+    """LangGraph node: fetch 7 weekly NDVI lags from GEE using state gps; return ndvi_lags in state."""
     gps = state.get("gps")
     if not gps:
         log_event(
@@ -523,6 +544,7 @@ def fetch_ndvi_lags_node(state: dict) -> dict:
 
 
 def fetch_weekly_lags_node(state: dict) -> dict:
+    """LangGraph node: fetch 8-week wind and water lags from NOAA; return wind_lags and water_lags in state."""
     stations = state.get("station_ids", {})
     wind = fetch_weekly_noaa_lags_chunked(stations.get("wind"), "wind")
     water = fetch_weekly_noaa_lags_chunked(
@@ -538,6 +560,7 @@ def fetch_weekly_lags_node(state: dict) -> dict:
 
 
 def route_by_goal(state: dict) -> Literal["forecast", "research"]:
+    """LangGraph conditional edge: return 'forecast' or 'research' based on state.goal."""
     if state.get("goal") == "forecast":
         return "forecast"
     return "research"

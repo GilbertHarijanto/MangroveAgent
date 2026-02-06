@@ -83,8 +83,6 @@ function SeriesChart({ series, chartType }) {
 }
 
 export default function App() {
-  const [apiKey, setApiKey] = useState("");
-  const [showApiKey, setShowApiKey] = useState(false);
   const [sessionId, setSessionId] = useState("");
   const [sessions, setSessions] = useState([]);
   const [renamingSessionId, setRenamingSessionId] = useState(null);
@@ -98,7 +96,8 @@ export default function App() {
   const bottomRef = useRef(null);
   const [menuSessionId, setMenuSessionId] = useState(null);
 
-  const canSend = apiKey.trim() && input.trim() && !isLoading;
+  const canSend = input.trim() && !isLoading;
+  const hasFirstChunkRef = useRef(false);
 
   async function handleSend(event) {
     event.preventDefault();
@@ -108,41 +107,109 @@ export default function App() {
     setInput("");
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
     setIsLoading(true);
+    hasFirstChunkRef.current = false;
+
+    setMessages((prev) => [
+      ...prev,
+      { role: "assistant", content: "", graphData: null }
+    ]);
 
     try {
-      const response = await fetch(`${API_BASE}/chat`, {
+      const response = await fetch(`${API_BASE}/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           session_id: sessionId || undefined,
-          message: userMessage,
-          api_key: apiKey
+          message: userMessage
         })
       });
 
-      const payload = await response.json();
       if (!response.ok) {
-        throw new Error(payload.detail || "Request failed");
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || "Request failed");
       }
 
-      setSessionId(payload.session_id);
-      if (!sessionId) {
-        await fetchSessions();
-      }
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: payload.reply,
-          graphData: payload.graph_data || null
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const block of lines) {
+          if (!block.trim()) continue;
+          let eventType = "";
+          let dataStr = "";
+          for (const line of block.split("\n")) {
+            if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+            if (line.startsWith("data: ")) dataStr = line.slice(6).trim();
+          }
+          let data = null;
+          try {
+            data = dataStr ? JSON.parse(dataStr) : null;
+          } catch (_) {
+            data = dataStr;
+          }
+
+          if (eventType === "session" && data?.session_id) {
+            setSessionId(data.session_id);
+            if (!sessionId) fetchSessions();
+          }
+          if (eventType === "chunk" && data?.text) {
+            if (!hasFirstChunkRef.current) {
+              hasFirstChunkRef.current = true;
+              setIsLoading(false);
+            }
+            setMessages((prev) => {
+              const next = [...prev];
+              const last = next[next.length - 1];
+              if (last?.role === "assistant")
+                next[next.length - 1] = {
+                  ...last,
+                  content: (last.content || "") + data.text
+                };
+              return next;
+            });
+          }
+          if (eventType === "graph" && data?.graph_data) {
+            setMessages((prev) => {
+              const next = [...prev];
+              const last = next[next.length - 1];
+              if (last?.role === "assistant")
+                next[next.length - 1] = { ...last, graphData: data.graph_data };
+              return next;
+            });
+          }
+          if (eventType === "error" && data?.message) {
+            setMessages((prev) => {
+              const next = [...prev];
+              const last = next[next.length - 1];
+              if (last?.role === "assistant")
+                next[next.length - 1] = { ...last, content: `Error: ${data.message}` };
+              return next;
+            });
+            setIsLoading(false);
+            return;
+          }
+          if (eventType === "done") {
+            setIsLoading(false);
+          }
         }
-      ]);
+      }
+      setIsLoading(false);
     } catch (error) {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: `Error: ${error.message}` }
-      ]);
-    } finally {
+      setMessages((prev) => {
+        const next = [...prev];
+        const last = next[next.length - 1];
+        if (last?.role === "assistant")
+          next[next.length - 1] = { ...last, content: `Error: ${error.message}` };
+        else next.push({ role: "assistant", content: `Error: ${error.message}` });
+        return next;
+      });
       setIsLoading(false);
     }
   }
@@ -294,42 +361,6 @@ export default function App() {
           </button>
         ) : null}
         <div className="sidebar-header" />
-        <label>
-          OpenAI API Key
-          <div className="input-with-icon">
-            <input
-              type={showApiKey ? "text" : "password"}
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
-              placeholder="sk-..."
-            />
-            <button
-              type="button"
-              className="icon-button"
-              onClick={() => setShowApiKey((prev) => !prev)}
-              aria-label={showApiKey ? "Hide API key" : "Show API key"}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                focusable="false"
-              >
-                <path
-                  d="M12 5c5.2 0 9.2 4.1 10.4 6-1.2 1.9-5.2 6-10.4 6S2.8 12.9 1.6 11C2.8 9.1 6.8 5 12 5zm0 10.5A4.5 4.5 0 1 0 12 6.5a4.5 4.5 0 0 0 0 9zm0-2.6a1.9 1.9 0 1 1 0-3.8 1.9 1.9 0 0 1 0 3.8z"
-                  fill="currentColor"
-                />
-                {showApiKey ? (
-                  <path
-                    d="M4 4l16 16"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                  />
-                ) : null}
-              </svg>
-            </button>
-          </div>
-        </label>
         <button
           type="button"
           className="secondary-button new-chat"

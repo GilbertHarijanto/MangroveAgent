@@ -1,2 +1,13 @@
 venv
 .env
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# SQLite / DB
+*.sqlite
+*.sqlite3
+*.db
+chat_history.sqlite

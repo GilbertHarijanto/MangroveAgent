@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 def get_db_path() -> str:
+    """Return the SQLite database path (env MANGROVE_DB_PATH or repo_root/chat_history.sqlite)."""
     override = os.getenv("MANGROVE_DB_PATH")
     if override:
         return override
@@ -15,10 +16,12 @@ def get_db_path() -> str:
 
 
 def connect():
+    """Open a SQLite connection to the chat history database (check_same_thread=False for FastAPI)."""
     return sqlite3.connect(get_db_path(), check_same_thread=False)
 
 
 def init_db() -> None:
+    """Create sessions and messages tables if missing; add title/graph_data columns if needed. On corruption, rename DB and reinit."""
     try:
         with connect() as conn:
             cur = conn.cursor()
@@ -81,6 +84,7 @@ def init_db() -> None:
 
 
 def _ensure_sessions_title_column(cur: sqlite3.Cursor) -> None:
+    """Add sessions.title column if it does not exist (migration helper)."""
     cur.execute("PRAGMA table_info(sessions)")
     columns = {row[1] for row in cur.fetchall()}
     if "title" not in columns:
@@ -88,6 +92,7 @@ def _ensure_sessions_title_column(cur: sqlite3.Cursor) -> None:
 
 
 def _ensure_graph_data_column(cur: sqlite3.Cursor) -> None:
+    """Add messages.graph_data column if it does not exist (migration helper)."""
     cur.execute("PRAGMA table_info(messages)")
     columns = {row[1] for row in cur.fetchall()}
     if "graph_data" not in columns:
@@ -95,6 +100,7 @@ def _ensure_graph_data_column(cur: sqlite3.Cursor) -> None:
 
 
 def create_session(session_id: str | None = None) -> str:
+    """Create a session row (or ensure it exists); return the session_id (provided or new UUID)."""
     session_id = session_id or str(uuid.uuid4())
     created_at = datetime.utcnow().isoformat()
     with connect() as conn:
@@ -107,6 +113,7 @@ def create_session(session_id: str | None = None) -> str:
 
 
 def add_message(session_id: str, role: str, content: str, graph_data: dict | None = None) -> None:
+    """Insert a message; if role is 'user' and session has no title, set title to first 25 chars of content + '...'."""
     created_at = datetime.utcnow().isoformat()
     graph_data_json = json.dumps(graph_data) if graph_data else None
     with connect() as conn:
@@ -118,18 +125,20 @@ def add_message(session_id: str, role: str, content: str, graph_data: dict | Non
             (session_id, role, content, graph_data_json, created_at),
         )
         if role == "user":
+            default_title = content[:25] + "..." if len(content) > 25 else content
             conn.execute(
                 """
                 UPDATE sessions
                 SET title = COALESCE(title, ?)
                 WHERE id = ?
                 """,
-                (content[:80], session_id),
+                (default_title, session_id),
             )
         conn.commit()
 
 
 def get_messages(session_id: str) -> list[dict]:
+    """Return all messages for a session (role, content, graph_data, created_at) in order."""
     with connect() as conn:
         cur = conn.cursor()
         cur.execute(
@@ -154,6 +163,7 @@ def get_messages(session_id: str) -> list[dict]:
 
 
 def get_sessions() -> list[dict]:
+    """Return all sessions (session_id, created_at, title) ordered by created_at descending."""
     with connect() as conn:
         cur = conn.cursor()
         cur.execute(
@@ -170,6 +180,7 @@ def get_sessions() -> list[dict]:
     ]
 
 def delete_session(session_id: str) -> None:
+    """Delete all messages and the session row for the given session_id."""
     with connect() as conn:
         conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
         conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
@@ -177,6 +188,7 @@ def delete_session(session_id: str) -> None:
 
 
 def rename_session(session_id: str, title: str) -> None:
+    """Update the session title for the given session_id."""
     with connect() as conn:
         conn.execute(
             "UPDATE sessions SET title = ? WHERE id = ?",
@@ -186,6 +198,7 @@ def rename_session(session_id: str, title: str) -> None:
 
 
 def get_latest_graph_data(session_id: str) -> dict | None:
+    """Return the most recent message's graph_data (parsed JSON) for the session, or None."""
     with connect() as conn:
         cur = conn.cursor()
         cur.execute(
