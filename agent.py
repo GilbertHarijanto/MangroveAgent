@@ -92,7 +92,7 @@ def timed_node(node_name: str, fn):
 
 def cache_data(ttl: int, maxsize: int = 1024):
     """
-    Wrap a function with an in-memory TTL cache (FastAPI/CLI compatible).
+    Wrap a function with an in-memory TTL cache.
     Uses cachetools.TTLCache and a lock for thread-safe access.
     """
 
@@ -452,6 +452,8 @@ def fetch_weekly_noaa_lags_chunked(station_id: str, product: str, total_days: in
             df["t"] = pd.to_datetime(df["t"])
             df.set_index("t", inplace=True)
 
+            # Wind product → the value is in a key named "s" (e.g. speed). 
+            # Water level product → the value is in a key named "v" (value).
             value_col = "s" if product == "wind" else "v"
             df[value_col] = pd.to_numeric(df[value_col], errors="coerce")
 
@@ -748,16 +750,6 @@ def run_agent(user_query: str):
     return {"final_output": final_output}
 
 
-# def run_mangrove_agent(user_query: str) -> str:
-#     """
-#     Wrapper for Streamlit or notebook usage.
-#     Returns only the final response string, or an error message.
-#     """
-#     response = run_agent(user_query)
-
-#     return response["final_output"]
-
-# --- Main Logic Refactored for Dynamic API Key ---
 def build_llm(api_key: str):
     """Initialize llm and structured_llm (intent extraction) with the given API key; return llm."""
     global llm, structured_llm
@@ -771,7 +763,7 @@ def build_llm(api_key: str):
     structured_llm = intent_llm.with_structured_output(QueryIntent)
     return llm
 
-
+## Legacy function for Streamlit or notebook usage. ##
 def run_mangrove_agent(user_query: str, api_key: str) -> str:
     """Public entry point: build LLM, run agent, return plain-text reply or error string."""
     try:
@@ -779,7 +771,7 @@ def run_mangrove_agent(user_query: str, api_key: str) -> str:
         return _run_with_llm(user_query, llm)
     except Exception as e:
         return f"Error processing query: {str(e)}"
-
+## End of Legacy function for Streamlit or notebook usage. ##
 
 def run_mangrove_agent_structured(user_query: str, api_key: str) -> dict:
     """Public entry point: build LLM, run agent, return dict with reply, intent, include_plot, plot_metric, graph_data."""

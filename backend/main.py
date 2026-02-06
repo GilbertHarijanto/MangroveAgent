@@ -29,7 +29,7 @@ from backend.store import (
 
 
 app = FastAPI(title="MangroveAgent API")
-LAST_GRAPH_DATA: dict[str, dict] = {}
+LAST_GRAPH_DATA: dict[str, dict] = {} # In-memory cache: session_id → last graph_data for “plot later” without re-running the agent.
 
 app.add_middleware(
     CORSMiddleware,
